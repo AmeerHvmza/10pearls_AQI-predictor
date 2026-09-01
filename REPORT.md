@@ -343,7 +343,7 @@ regression.
 pip install -r requirements.txt
 export OPENWEATHER_API_KEY=your_key
 
-python src/backfill.py --days 365     # or synthetic_backfill.py without a key
+python src/backfill.py --days 90
 python src/train_pipeline.py          # ~17 min on CPU, LSTM dominates the time
 python src/predict.py
 

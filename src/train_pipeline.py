@@ -386,7 +386,7 @@ def train_for_horizon(df: pd.DataFrame, horizon: int, feature_cols: list):
               f"MAE={metrics['mae']:.2f} R2={metrics['r2']:.3f} "
               f"(worst fold {worst['fold']}: R2={worst['r2']:.3f})")
 
-    # Deep-learning candidate. Trained separately because it consumes 48-hour
+    # Deep-learning candidate. Trained separately because it consumes 12-hour
     # sequences rather than one flattened row per prediction.
     lstm_result = None
     try:
@@ -469,14 +469,17 @@ def save_to_registry(result: dict):
     horizon = result["horizon"]
     trained_at = dt.datetime.now(dt.timezone.utc).isoformat()
 
-    keras_path = os.path.join(config.MODELS_DIR, f"model_{horizon}h.keras")
+    keras_path = config.keras_model_path(horizon)
     if result["is_sequence"]:
         # Keras models do not pickle, so the network is saved alongside the
-        # joblib bundle and referenced by path.
+        # joblib bundle. Store only the filename; load time always joins it
+        # onto config.MODELS_DIR so CI absolute paths cannot leak.
         result["model"].save(keras_path)
         serialisable_model = None
+        keras_ref = os.path.basename(keras_path)
     else:
         serialisable_model = result["model"]
+        keras_ref = None
         if os.path.exists(keras_path):
             # A previous run deployed the LSTM here; remove the orphan so
             # loading cannot pick up a stale network.
@@ -488,7 +491,7 @@ def save_to_registry(result: dict):
          "model_name": result["best_model_name"],
          "is_sequence": result["is_sequence"],
          "seq_len": result["seq_len"],
-         "keras_path": keras_path if result["is_sequence"] else None,
+         "keras_path": keras_ref,
          "target_mode": "delta",
          "residual_std": result["residual_std"],
          "baseline_residual_std": result["baseline_residual_std"],
@@ -526,7 +529,7 @@ def save_to_registry(result: dict):
                  "Per-fold metrics are included because the earliest expanding-"
                  "window fold trains on a single season and is scored on another, "
                  "which dominates the pooled figures. The LSTM candidate is scored "
-                 "on 48-hour sequence windows, a near-identical but not byte-"
+                 "on 12-hour sequence windows, a near-identical but not byte-"
                  "identical subset of the rows the scikit-learn candidates use."),
     }
     with open(os.path.join(config.MODELS_DIR, f"metrics_{horizon}h.json"), "w") as f:
@@ -574,7 +577,7 @@ def _sequence_attributions(result: dict, explain_X, background_X):
 def _explain_sequence_model(result: dict, df: pd.DataFrame, plt):
     """Explainability plot for the LSTM.
 
-    Two panels: which features matter, and how far back in the 48-hour window
+    Two panels: which features matter, and how far back in the 12-hour window
     the network actually looks.
     """
     import lstm_model as lm

@@ -14,32 +14,39 @@ from train_pipeline import engineer_features, predict_with_interval
 
 
 def load_model(horizon: int):
+    """Load a registry bundle. Returns (bundle, None) or (None, reason).
+
+    Keras weights are always resolved as MODELS_DIR / model_{h}h.keras. The
+    path stored in the joblib (if any) is ignored so CI absolute paths cannot
+    break local or other-machine loads.
+    """
     path = os.path.join(config.MODELS_DIR, f"model_{horizon}h.joblib")
     if not os.path.exists(path):
-        return None
+        return None, f"{horizon}h model file not found at expected path {path}"
     try:
         bundle = joblib.load(path)
     except Exception as exc:
-        print(f"Could not load model_{horizon}h.joblib ({type(exc).__name__}: {exc})")
-        return None
+        return None, (
+            f"{horizon}h joblib could not be loaded ({type(exc).__name__}: {exc})"
+        )
 
-    # Keras networks are stored beside the bundle rather than inside it.
     if bundle.get("is_sequence"):
-        keras_path = bundle.get("keras_path")
-        if not keras_path or not os.path.exists(keras_path):
-            print(f"Warning: {horizon}h bundle expects a Keras model at "
-                  f"{keras_path}, which is missing; skipping this horizon.")
-            return None
+        keras_path = config.keras_model_path(horizon)
+        if not os.path.exists(keras_path):
+            return None, (
+                f"{horizon}h model file not found at expected path {keras_path}"
+            )
         try:
             from lstm_model import LSTMForecaster
             bundle["model"] = LSTMForecaster.load(
                 keras_path, n_features=len(bundle["feature_cols"]),
                 seq_len=bundle["seq_len"])
         except Exception as exc:
-            print(f"Warning: could not load the {horizon}h LSTM "
-                  f"({type(exc).__name__}: {exc}); skipping this horizon.")
-            return None
-    return bundle
+            return None, (
+                f"{horizon}h LSTM failed to load from {keras_path} "
+                f"({type(exc).__name__}: {exc})"
+            )
+    return bundle, None
 
 
 def _prepared_history() -> pd.DataFrame:
@@ -50,19 +57,23 @@ def _prepared_history() -> pd.DataFrame:
     return engineer_features(to_hourly_grid(df))
 
 
-def get_forecast() -> pd.DataFrame:
-    """Returns a DataFrame: horizon_hours, forecast_time, predicted_aqi,
-    aqi_lower, aqi_upper, category, model_used."""
+def get_forecast():
+    """Returns (forecast DataFrame, per-horizon skip reasons).
+
+    The DataFrame has one row per horizon that could actually be scored.
+    Skipped horizons are listed in `issues` instead of being silent.
+    """
+    issues = []
     df = _prepared_history()
     if df.empty:
-        return pd.DataFrame()
+        return pd.DataFrame(), ["feature store is empty"]
 
     # The grid can end on placeholder rows for hours that were never measured;
     # anchor the forecast to the most recent row that actually has an AQI.
     df = df.sort_values("timestamp")
     observed = df[df["aqi"].notna()]
     if observed.empty:
-        return pd.DataFrame()
+        return pd.DataFrame(), ["no measured AQI rows in the feature store"]
     latest = observed.iloc[[-1]]
     anchor = latest["timestamp"].iloc[0]
     # Models predict the change from this value, so it is also what the
@@ -71,15 +82,19 @@ def get_forecast() -> pd.DataFrame:
 
     rows = []
     for horizon in config.HORIZONS:
-        bundle = load_model(horizon)
+        bundle, load_error = load_model(horizon)
         if bundle is None:
+            issues.append(load_error)
+            print(f"Warning: {load_error}")
             continue
 
         feature_cols = bundle["feature_cols"]
         missing = [c for c in feature_cols if c not in df.columns]
         if missing:
-            print(f"Warning: missing features for {horizon}h model: {missing[:5]}"
-                  f"{'...' if len(missing) > 5 else ''}")
+            msg = (f"{horizon}h: missing feature columns {missing[:5]}"
+                   f"{'...' if len(missing) > 5 else ''}")
+            issues.append(msg)
+            print(f"Warning: {msg}")
             continue
 
         if bundle.get("is_sequence"):
@@ -88,20 +103,29 @@ def get_forecast() -> pd.DataFrame:
             seq_len = bundle["seq_len"]
             window = df[df["timestamp"] <= anchor].tail(seq_len)
             if len(window) < seq_len:
-                print(f"Warning: {horizon}h LSTM needs {seq_len} consecutive "
-                      f"hours; only {len(window)} available.")
+                msg = (f"{horizon}h: recent data has gaps, waiting for more "
+                       f"hourly runs (LSTM needs {seq_len} consecutive hours, "
+                       f"only {len(window)} available)")
+                issues.append(msg)
+                print(f"Warning: {msg}")
                 continue
             X = window[feature_cols].astype(float).values
         else:
             X = latest[feature_cols].astype(float).values
         # Present-but-null is the common failure: the longest lag (48h) is NaN
         # until the store has that much history, and sklearn raises on NaN.
-        # Report which feature is not ready instead of crashing the dashboard.
         if np.isnan(X).any():
-            not_ready = [c for c, v in zip(feature_cols, X[-1]) if np.isnan(v)]
-            print(f"Warning: {horizon}h model needs more history; "
-                  f"null features: {not_ready[:5]}"
-                  f"{'...' if len(not_ready) > 5 else ''}")
+            not_ready = [c for c, v in zip(feature_cols, np.atleast_2d(X)[-1])
+                         if np.isnan(v)]
+            if not_ready:
+                msg = (f"{horizon}h: recent data has gaps, waiting for more "
+                       f"hourly runs (null features: {not_ready[:5]}"
+                       f"{'...' if len(not_ready) > 5 else ''})")
+            else:
+                msg = (f"{horizon}h: recent data has gaps, waiting for more "
+                       f"hourly runs (NaN inside the input window)")
+            issues.append(msg)
+            print(f"Warning: {msg}")
             continue
 
         try:
@@ -115,8 +139,10 @@ def get_forecast() -> pd.DataFrame:
             ml_lower = float(lower[0]) if lower is not None else None
             ml_upper = float(upper[0]) if upper is not None else None
         except Exception as exc:
-            print(f"Warning: {horizon}h prediction failed "
-                  f"({type(exc).__name__}: {exc}); skipping.")
+            msg = (f"{horizon}h: prediction failed "
+                   f"({type(exc).__name__}: {exc})")
+            issues.append(msg)
+            print(f"Warning: {msg}")
             continue
 
         # Training records whether the trained model actually beat "assume no
@@ -146,7 +172,7 @@ def get_forecast() -> pd.DataFrame:
             "beats_baseline": bool(beats_baseline),
             "ml_predicted_aqi": round(ml_value, 1),
         })
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows), issues
 
 
 def get_model_metrics() -> dict:
@@ -226,4 +252,9 @@ if __name__ == "__main__":
     if current and current["is_stale"]:
         print(f"WARNING: latest feature row is {current['age_hours']:.0f}h old; "
               f"run src/feature_pipeline.py to refresh.")
-    print(get_forecast().to_string())
+    forecast, issues = get_forecast()
+    print(forecast.to_string())
+    if issues:
+        print("issues:")
+        for item in issues:
+            print(f"  - {item}")

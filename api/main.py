@@ -94,6 +94,7 @@ class ForecastResponse(BaseModel):
     alert_threshold: int
     alert: bool
     forecast: List[ForecastPoint]
+    issues: List[str] = Field(default_factory=list)
 
 
 class HistoryPoint(BaseModel):
@@ -162,11 +163,11 @@ def forecast():
     if current_reading is None:
         raise HTTPException(status_code=503, detail="Feature store is empty.")
 
-    df = get_forecast()
+    df, issues = get_forecast()
     if df.empty:
         raise HTTPException(
             status_code=503,
-            detail="No trained models in the registry. Run src/train_pipeline.py.",
+            detail=issues or ["No horizon could be scored."],
         )
 
     points = [ForecastPoint(**row) for row in df.to_dict(orient="records")]
@@ -179,6 +180,7 @@ def forecast():
         alert_threshold=config.ALERT_THRESHOLD,
         alert=triggered,
         forecast=points,
+        issues=issues,
     )
 
 
@@ -208,7 +210,7 @@ def alerts():
     if current_reading["aqi"] >= config.ALERT_THRESHOLD:
         periods.append("now")
 
-    df = get_forecast()
+    df, _issues = get_forecast()
     if not df.empty:
         for row in df.itertuples():
             if row.predicted_aqi >= config.ALERT_THRESHOLD:

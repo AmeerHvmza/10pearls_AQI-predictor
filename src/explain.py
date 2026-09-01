@@ -28,9 +28,9 @@ def run(horizons):
     df = engineer_features(to_hourly_grid(df))
 
     for horizon in horizons:
-        bundle = load_model(horizon)
+        bundle, load_error = load_model(horizon)
         if bundle is None:
-            print(f"[{horizon}h] no model in the registry -- skipping.")
+            print(f"[{horizon}h] {load_error} -- skipping.")
             continue
 
         print(f"[{horizon}h] explaining {bundle.get('model_name')} "

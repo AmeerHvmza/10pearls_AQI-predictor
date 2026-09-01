@@ -10,8 +10,11 @@ Run:
 """
 import argparse
 import datetime as dt
+import json
 import os
 import sys
+from urllib.parse import urlencode
+
 import pandas as pd
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -38,6 +41,37 @@ WEATHER_FIELDS = {
 }
 
 
+def _redacted_url(url: str, params: dict) -> str:
+    safe = {
+        k: ("REDACTED" if str(k).lower() in {"appid", "api_key", "apikey", "key"} else v)
+        for k, v in params.items()
+    }
+    return f"{url}?{urlencode(safe)}"
+
+
+def _audited_get(url: str, params: dict, kind: str) -> dict:
+    redacted = _redacted_url(url, params)
+    print(f"HTTP GET {redacted}", flush=True)
+    data = _get_json(url, params)
+    os.makedirs(config.DATA_DIR, exist_ok=True)
+    if kind == "pollution":
+        n_list = len(data.get("list") or [])
+        print(f"  -> HTTP 200, list entries: {n_list}", flush=True)
+        path = os.path.join(config.DATA_DIR, "gapfill_first_pollution.json")
+        if not os.path.exists(path):
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(data, fh)
+            print(f"  -> saved first pollution JSON -> {path}", flush=True)
+    elif kind == "weather":
+        hourly = (data.get("hourly") or {}).get("time") or []
+        print(f"  -> HTTP 200, hourly timestamps: {len(hourly)}", flush=True)
+        path = os.path.join(config.DATA_DIR, "gapfill_first_weather.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(data, fh)
+        print(f"  -> saved weather JSON -> {path}", flush=True)
+    return data
+
+
 def fetch_pollution_history(lat, lon, start_utc: dt.datetime, end_utc: dt.datetime) -> list:
     """Fetch pollution history in chunks. `start_utc`/`end_utc` must be
     timezone-aware so that `.timestamp()` yields true UTC epochs."""
@@ -48,12 +82,12 @@ def fetch_pollution_history(lat, lon, start_utc: dt.datetime, end_utc: dt.dateti
     while chunk_start < end_utc:
         chunk_end = min(chunk_start + dt.timedelta(days=CHUNK_DAYS), end_utc)
         print(f"  pollution {chunk_start:%Y-%m-%d} -> {chunk_end:%Y-%m-%d}")
-        data = _get_json(config.AIR_POLLUTION_HISTORY_URL, {
+        data = _audited_get(config.AIR_POLLUTION_HISTORY_URL, {
             "lat": lat, "lon": lon,
             "start": int(chunk_start.timestamp()),
             "end": int(chunk_end.timestamp()),
             "appid": config.OPENWEATHER_API_KEY,
-        })
+        }, kind="pollution")
         entries.extend(data.get("list") or [])
         chunk_start = chunk_end
     return entries
@@ -82,12 +116,12 @@ def fetch_weather_history_openmeteo(lat, lon, start_date: str, end_date: str) ->
     `timezone=UTC` makes the returned `time` strings tz-naive UTC, matching the
     tz-naive UTC timestamps used everywhere else in the project.
     """
-    data = _get_json("https://archive-api.open-meteo.com/v1/archive", {
+    data = _audited_get("https://archive-api.open-meteo.com/v1/archive", {
         "latitude": lat, "longitude": lon,
         "start_date": start_date, "end_date": end_date,
         "hourly": ",".join(WEATHER_FIELDS),
         "timezone": "UTC",
-    })
+    }, kind="weather")
     hourly = data.get("hourly")
     if not hourly or not hourly.get("time"):
         raise UpstreamError("Open-Meteo returned no hourly weather data.")
@@ -103,9 +137,7 @@ def run(days: int):
     if not config.OPENWEATHER_API_KEY:
         raise SystemExit(
             "OPENWEATHER_API_KEY is not set.\n"
-            "  Local:  export OPENWEATHER_API_KEY=your_key   (PowerShell: $env:OPENWEATHER_API_KEY=\"your_key\")\n"
-            "  No key yet? Run `python src/synthetic_backfill.py --days 90` to "
-            "exercise the pipeline on simulated data in the meantime."
+            "  Local: put OPENWEATHER_API_KEY in a project-root .env or export it."
         )
 
     # Keep these tz-aware: `.timestamp()` on a naive datetime is interpreted as

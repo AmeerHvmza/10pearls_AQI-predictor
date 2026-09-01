@@ -188,9 +188,11 @@ def load_dashboard_data(history_hours: int):
     # After the hourly-grid reindex the store has no missing timestamps, but
     # hours that were never measured are present with a null AQI.
     unmeasured = int(store["aqi"].isna().sum()) if "aqi" in store.columns else 0
+    forecast, forecast_issues = get_forecast()
     return {
         "current": get_current_aqi(),
-        "forecast": get_forecast(),
+        "forecast": forecast,
+        "forecast_issues": forecast_issues,
         "history": get_history(history_hours),
         "metrics": get_model_metrics(),
         "unmeasured_hours": unmeasured + sum(g[2] for g in describe_gaps(store)),
@@ -271,6 +273,7 @@ with st.sidebar:
 data = load_dashboard_data(history_days * 24)
 current = data["current"]
 forecast = data["forecast"]
+forecast_issues = data.get("forecast_issues") or []
 history = data["history"]
 metrics = data["metrics"]
 
@@ -278,8 +281,8 @@ if current is None:
     st.markdown(
         "<div class='banner banner-info'><div class='banner-icon'>📭</div><div>"
         "<div class='banner-title'>No data in the feature store yet</div>"
-        "Run <code>python src/backfill.py --days 90</code> (or "
-        "<code>python src/synthetic_backfill.py --days 90</code> without an API key), "
+        "Run <code>python src/backfill.py --days 90</code> with "
+        "<code>OPENWEATHER_API_KEY</code> set, "
         "then <code>python src/train_pipeline.py</code>.</div></div>",
         unsafe_allow_html=True,
     )
@@ -438,9 +441,14 @@ if current["is_stale"]:
 st.markdown("<div class='section-title'>3-day forecast</div>", unsafe_allow_html=True)
 
 if forecast.empty:
-    banner("info", "🧠", "No trained models found",
-           "Run <code>python src/train_pipeline.py</code> to populate the model registry.")
+    detail = "<br>".join(html.escape(i) for i in forecast_issues) or (
+        "Run <code>python src/train_pipeline.py</code> to populate the model registry."
+    )
+    banner("info", "🧠", "Forecast unavailable", detail)
 else:
+    if forecast_issues:
+        banner("warn", "⚠️", "Some horizons could not be scored",
+               "<br>".join(html.escape(i) for i in forecast_issues))
     st.markdown(
         "<div class='section-note'>Each horizon is measured from the latest reading. "
         "Ranges are an 80% band derived from the model's out-of-sample errors — "

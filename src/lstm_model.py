@@ -3,7 +3,7 @@ TensorFlow/Keras LSTM forecaster.
 
 The scikit-learn candidates consume one engineered row per prediction, with
 history flattened into explicit lag and rolling columns. The LSTM instead
-consumes a raw 48-hour sequence and learns the temporal structure itself, so
+consumes a raw 12-hour sequence and learns the temporal structure itself, so
 it uses a deliberately smaller feature set with no lag columns — feeding it
 the engineered lags as well would just duplicate what the sequence already
 contains.
@@ -17,7 +17,7 @@ skip this candidate cleanly on machines where TensorFlow is not installed.
 import os
 import numpy as np
 
-SEQUENCE_LENGTH = 48  # hours of history fed to the network
+SEQUENCE_LENGTH = 12  # hours of history fed to the network
 
 # Raw per-hour signals only. Anything derived from a window (lags, rolling
 # means, diffs) is excluded because the sequence already carries it.

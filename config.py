@@ -5,6 +5,25 @@ All secrets are read from environment variables — never hardcode API keys.
 import os
 
 
+def _load_dotenv():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if not os.path.isfile(path):
+        return
+    with open(path, encoding="utf-8") as fh:
+        for raw in fh:
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip("'").strip('"')
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
+_load_dotenv()
+
+
 def _env_str(name: str, default: str) -> str:
     """GitHub Actions expands an undefined `vars.X` to an empty string rather
     than leaving it unset, so `os.getenv(name, default)` would return "" and
@@ -71,6 +90,15 @@ HOPSWORKS_MODEL_REGISTRY = _env_str("HOPSWORKS_MODEL_REGISTRY", "aqi_forecaster"
 
 # ---- Model registry ----------------------------------------------------
 MODELS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
+
+
+def keras_model_path(horizon: int) -> str:
+    """Always reconstruct the Keras weights path on this machine.
+
+    Bundles must not store an absolute save-time path (GitHub Actions writes
+    `/home/runner/work/...` which does not exist locally).
+    """
+    return os.path.join(MODELS_DIR, f"model_{horizon}h.keras")
 
 # ---- Forecast horizons (hours ahead) -----------------------------------
 HORIZONS = [24, 48, 72]  # next 3 days
