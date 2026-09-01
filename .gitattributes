@@ -1,0 +1,17 @@
+# Normalise text to LF in the repository. The workflow files contain bash
+# `run:` blocks that execute on Ubuntu runners, where CRLF line endings cause
+# "bad interpreter" and unterminated-string errors.
+* text=auto eol=lf
+
+*.py       text eol=lf
+*.yml      text eol=lf
+*.yaml     text eol=lf
+*.toml     text eol=lf
+*.md       text eol=lf
+*.txt      text eol=lf
+
+# Binary artifacts: never touch these.
+*.parquet  binary
+*.joblib   binary
+*.keras    binary
+*.png      binary

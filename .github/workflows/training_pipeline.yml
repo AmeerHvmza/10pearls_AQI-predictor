@@ -1,0 +1,76 @@
+name: Training Pipeline (daily)
+
+on:
+  schedule:
+    - cron: "0 3 * * *"   # once a day at 03:00 UTC
+  workflow_dispatch: {}
+
+# Required for the commit-back step: the default GITHUB_TOKEN is read-only on
+# new repositories, so `git push` would fail with a 403.
+permissions:
+  contents: write
+
+# Shares a lock with the hourly feature pipeline, which commits to the same
+# branch and would otherwise collide with this job at 03:00 UTC.
+concurrency:
+  group: aqi-repo-commit
+  cancel-in-progress: false
+
+jobs:
+  run-training-pipeline:
+    runs-on: ubuntu-latest
+    # Training four candidates (including a Keras LSTM) across three horizons
+    # comfortably exceeds the 6h default, but not by design — fail loudly
+    # rather than burning Actions minutes if something hangs.
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Train models
+        env:
+          AQI_CITY: ${{ vars.AQI_CITY }}
+          AQI_LAT: ${{ vars.AQI_LAT }}
+          AQI_LON: ${{ vars.AQI_LON }}
+          FEATURE_STORE_BACKEND: ${{ vars.FEATURE_STORE_BACKEND }}
+          HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
+          HOPSWORKS_PROJECT: ${{ vars.HOPSWORKS_PROJECT }}
+        run: python src/train_pipeline.py
+
+      - name: Commit updated models
+        run: |
+          set -euo pipefail
+          git config user.name "aqi-bot"
+          git config user.email "aqi-bot@users.noreply.github.com"
+
+          # Training legitimately produces no artifacts when the feature store
+          # is still too short, so `git add models/` would fail on a first run.
+          if [ -z "$(ls -A models 2>/dev/null)" ]; then
+            echo "No models produced (feature store likely too short yet)."
+            exit 0
+          fi
+
+          git add -- models
+          if git diff --cached --quiet; then
+            echo "Models unchanged; nothing to commit."
+            exit 0
+          fi
+
+          git commit -m "Retrain models [skip ci]"
+
+          for attempt in 1 2 3; do
+            if git push; then
+              exit 0
+            fi
+            echo "Push rejected (attempt $attempt); rebasing onto origin."
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
+          done
+          echo "Could not push after 3 attempts." >&2
+          exit 1

@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+env/
+
+.env
+.env.local
+
+.streamlit/secrets.toml
+
+.DS_Store
+.ipynb_checkpoints/
+*.parquet.tmp
+tmp*.parquet
+*.parquet.bak
+
+# The feature store and model registry ARE committed on purpose: the GitHub
+# Actions workflows push updates back to the repo, and the dashboard reads them
+# straight from the checkout. Do not ignore data/ or models/.

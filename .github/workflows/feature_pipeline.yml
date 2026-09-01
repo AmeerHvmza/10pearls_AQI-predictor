@@ -1,0 +1,77 @@
+name: Feature Pipeline (hourly)
+
+on:
+  schedule:
+    - cron: "0 * * * *"   # every hour
+  workflow_dispatch: {}
+
+# Required for the commit-back step: the default GITHUB_TOKEN is read-only on
+# new repositories, so `git push` would fail with a 403.
+permissions:
+  contents: write
+
+# The hourly feature job and the daily training job both commit to the same
+# branch. Serialising the pipelines avoids non-fast-forward push rejections.
+concurrency:
+  group: aqi-repo-commit
+  cancel-in-progress: false
+
+jobs:
+  run-feature-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run feature pipeline
+        env:
+          OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
+          AQI_CITY: ${{ vars.AQI_CITY }}
+          AQI_LAT: ${{ vars.AQI_LAT }}
+          AQI_LON: ${{ vars.AQI_LON }}
+          # Optional: set the FEATURE_STORE_BACKEND variable to "hopsworks" and
+          # add the secret to write to a managed feature store instead of the
+          # committed parquet file.
+          FEATURE_STORE_BACKEND: ${{ vars.FEATURE_STORE_BACKEND }}
+          HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
+          HOPSWORKS_PROJECT: ${{ vars.HOPSWORKS_PROJECT }}
+        run: python src/feature_pipeline.py
+
+      - name: Commit updated feature store
+        run: |
+          set -euo pipefail
+          git config user.name "aqi-bot"
+          git config user.email "aqi-bot@users.noreply.github.com"
+
+          # `git add <path>` fails on a missing path, which is the state of a
+          # first run before the pipeline has ever written the store.
+          if [ ! -e data/features.parquet ]; then
+            echo "No feature store to commit yet."
+            exit 0
+          fi
+
+          git add -- data/features.parquet
+          if git diff --cached --quiet; then
+            echo "Feature store unchanged; nothing to commit."
+            exit 0
+          fi
+
+          git commit -m "Update features [skip ci]"
+
+          # Another run may have pushed since checkout; rebase and retry.
+          for attempt in 1 2 3; do
+            if git push; then
+              exit 0
+            fi
+            echo "Push rejected (attempt $attempt); rebasing onto origin."
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
+          done
+          echo "Could not push after 3 attempts." >&2
+          exit 1

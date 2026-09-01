@@ -1,0 +1,17 @@
+[theme]
+base = "dark"
+
+# Cool slate-and-cyan palette: the accent is reserved for interactive elements
+# so that the EPA severity colours (green -> maroon) are the only strong hues
+# on the page and stay readable at a glance.
+primaryColor = "#22d3ee"
+backgroundColor = "#0b1120"
+secondaryBackgroundColor = "#131c31"
+textColor = "#e2e8f0"
+font = "sans serif"
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false
