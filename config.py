@@ -41,6 +41,13 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name, "")
+    if not raw or not raw.strip():
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 # ---- Location -------------------------------------------------------
 CITY_NAME = _env_str("AQI_CITY", "Karachi")
 LATITUDE = _env_float("AQI_LAT", 24.8607)
@@ -74,14 +81,21 @@ HTTP_RETRIES = int(_env_float("AQI_HTTP_RETRIES", 3))
 HTTP_BACKOFF_SECONDS = _env_float("AQI_HTTP_BACKOFF", 2)
 
 # ---- Feature store ----------------------------------------------------
-# Default: local parquet files (works with zero external accounts, and is
-# what GitHub Actions will commit back to the repo or push to cheap storage
-# e.g. an S3 bucket / Hopsworks). Swap FEATURE_STORE_BACKEND to "hopsworks"
-# once you've created a free Hopsworks project — see README.
-FEATURE_STORE_BACKEND = _env_str("FEATURE_STORE_BACKEND", "local")
+# Local parquet is always the source of truth (training, predict, dashboard,
+# API). Writes also dual-write to Hopsworks when HOPSWORKS_ENABLED is true;
+# a Hopsworks failure must not fail the pipeline.
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 FEATURES_PATH = os.path.join(DATA_DIR, "features.parquet")
 
+# Deprecated: previously chose parquet XOR Hopsworks. Dual-write means both
+# are attempted when Hopsworks is enabled, so this switch is ignored.
+FEATURE_STORE_BACKEND = _env_str("FEATURE_STORE_BACKEND", "local")
+if os.getenv("FEATURE_STORE_BACKEND", "").strip():
+    print("[config] FEATURE_STORE_BACKEND is deprecated and ignored. "
+          "Parquet is always the source of truth. Set HOPSWORKS_ENABLED=true "
+          "to also write to Hopsworks.")
+
+HOPSWORKS_ENABLED = _env_bool("HOPSWORKS_ENABLED", False)
 HOPSWORKS_API_KEY = _env_str("HOPSWORKS_API_KEY", "")
 HOPSWORKS_PROJECT = _env_str("HOPSWORKS_PROJECT", "")
 HOPSWORKS_FEATURE_GROUP = _env_str("HOPSWORKS_FEATURE_GROUP", "aqi_features")

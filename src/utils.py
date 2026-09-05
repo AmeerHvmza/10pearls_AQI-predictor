@@ -99,21 +99,24 @@ def describe_gaps(df: pd.DataFrame) -> list:
 
 
 def load_feature_store() -> pd.DataFrame:
-    """Read the feature store. Returns an empty frame with the right
-    schema if nothing has been written yet."""
-    if config.FEATURE_STORE_BACKEND == "hopsworks":
-        return normalize_timestamps(_load_from_hopsworks())
+    """Read the local parquet store (source of truth).
 
+    Returns an empty frame if nothing has been written yet. Training and
+    prediction always read this path — Hopsworks is a dual-write replica,
+    not a read backend.
+    """
     if os.path.exists(config.FEATURES_PATH):
         return normalize_timestamps(pd.read_parquet(config.FEATURES_PATH))
     return pd.DataFrame()
 
 
 def save_feature_store(df: pd.DataFrame) -> None:
-    """Append-and-dedupe write to the feature store."""
-    if config.FEATURE_STORE_BACKEND == "hopsworks":
-        return _save_to_hopsworks(df)
+    """Append-and-dedupe write to parquet, then optional Hopsworks dual-write.
 
+    Parquet is the source of truth and must succeed. Hopsworks is attempted
+    only when HOPSWORKS_ENABLED is true; failures are logged and ignored so
+    the pipeline still completes on local-only setups.
+    """
     if df is None or df.empty:
         print("Nothing to save: received an empty frame.")
         return
@@ -143,6 +146,9 @@ def save_feature_store(df: pd.DataFrame) -> None:
         print(f"  note: {len(gaps)} gap(s) totalling {missing} missing hour(s); "
               f"lag features are computed on a reindexed hourly grid.")
 
+    if config.HOPSWORKS_ENABLED:
+        _try_hopsworks_dual_write(combined)
+
 
 def _atomic_write_parquet(df: pd.DataFrame, path: str) -> None:
     """Write via a temp file + replace so an interrupted run can't leave a
@@ -168,13 +174,13 @@ def hopsworks_login():
     try:
         import hopsworks
     except ImportError as exc:
-        raise SystemExit(
+        raise RuntimeError(
             "The Hopsworks client is not installed.\n"
             "  pip install hopsworks"
         ) from exc
 
     if not config.HOPSWORKS_API_KEY:
-        raise SystemExit(
+        raise RuntimeError(
             "HOPSWORKS_API_KEY is not set.\n"
             "  Create a free project at https://app.hopsworks.ai, then\n"
             "  Account Settings > API keys > New API key (scopes: "
@@ -183,10 +189,27 @@ def hopsworks_login():
             "  CI:     add it as a repository secret."
         )
 
+    cert_folder = os.getenv("HOPSWORKS_CERT_FOLDER", "").strip() or os.path.join(
+        tempfile.gettempdir(), "hopsworks-certs"
+    )
+    os.makedirs(cert_folder, exist_ok=True)
+
     return hopsworks.login(
         api_key_value=config.HOPSWORKS_API_KEY,
         project=config.HOPSWORKS_PROJECT or None,
+        cert_folder=cert_folder,
     )
+
+
+def _try_hopsworks_dual_write(df: pd.DataFrame) -> None:
+    """Best-effort replica write. Never raises."""
+    try:
+        _save_to_hopsworks(df)
+    except Exception as exc:
+        # Hopsworks errors can include unicode arrows; Windows cp1252
+        # would otherwise crash the pipeline while logging the skip.
+        message = str(exc).encode("ascii", errors="replace").decode("ascii")
+        print(f"Hopsworks dual-write skipped ({type(exc).__name__}): {message}")
 
 
 def _hopsworks_feature_group(create: bool):

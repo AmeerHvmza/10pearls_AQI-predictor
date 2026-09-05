@@ -8,7 +8,7 @@
 **sklearn:** `1.9.0` (`requirements.txt`)
 **Trained at:** 2026-09-05 16:48–16:54 UTC
 **Deployed model (all horizons):** Random Forest, `beats_baseline=true`
-**Feature store backend:** local parquet (`data/features.parquet`). **Hopsworks and Vertex AI are not live.**
+**Feature store backend:** local parquet (`data/features.parquet`). **Hopsworks dual-write is scaffolded on `hopsworks-integration` only; ingest is not live. Vertex AI is not used.** Do not merge that branch into `main`.
 **Serving:** FastAPI + Streamlit reading that parquet and `models/`. No Flask, no Airflow, no TF Serving.
 
 This report describes **only** the unified store and models that exist in the
@@ -72,12 +72,12 @@ retrain, commit-back). Flask and Airflow are not implemented. Streamlit is
 the human dashboard. Both UIs call `src/predict.py`; there is no second
 model path.
 
-**Managed feature store / model registry — not live.** The brief lists
-Hopsworks or Vertex AI. Neither account is connected. `FEATURE_STORE_BACKEND`
-defaults to `local`. `hopsworks` is commented out in `requirements.txt`.
-Vertex AI does not appear in the repo. `src/verify_hopsworks.py` and the
-README “Swapping in Hopsworks” section are unused optional paths. The
-registry is the committed `models/` directory.
+**Managed feature store / model registry.** The brief lists Hopsworks or
+Vertex AI. Vertex AI is not in the repo. Hopsworks was connected on the
+`hopsworks-integration` branch (login, project, feature group created);
+data ingest failed — see §8.13. Production reads stay on parquet.
+`hopsworks` remains commented out in `requirements.txt`. The registry is
+the committed `models/` directory.
 
 ---
 
@@ -271,8 +271,9 @@ values are below that; `/categories/200` returns `alerting: true`.
 
 ## 8. Limitations
 
-1. **Hopsworks / Vertex AI are not used.** Local parquet + git is the
-   store and registry. That is a scope cut, not a hidden integration.
+1. **Vertex AI is not used.** Local parquet + git is the production store
+   and registry. Hopsworks is attempted only on `hopsworks-integration`
+   (see §8.13); it is not a live write path.
 2. **One year of real data.** Enough for RF to beat persistence on RMSE;
    not enough to treat winter fold scores as settled.
 3. **No forecast weather as input.** Models see conditions *now* only.
@@ -293,6 +294,19 @@ values are below that; `/categories/200` returns `alerting: true`.
 12. **Push is a non-fast-forward** against current `origin/main` (this
     commit sits on the pre-divergence tip plus the unified artifacts).
     Rebase or merge on push; do not force-push unless you intend to.
+13. **Hopsworks dual-write is incomplete (Windows write path).** On
+    `hopsworks-integration`, login, project connection, and feature-group
+    creation succeeded against `aqi_amproject` / `aqi_features` v1. Data
+    ingestion then failed: the Hopsworks Python SDK’s Delta-RS write path
+    talks to HDFS and needs Kerberos (`libgssapi_krb5`), which this
+    Windows client does not provide. That is a known class of issue when
+    running the Hopsworks write path natively on Windows rather than
+    Linux/WSL — not a credentials or dual-write design bug. Hopsworks
+    itself reported the group empty (`No delta logs found` / 0 rows).
+    Dual-write is fail-soft: Hopsworks errors are logged and do not
+    affect the parquet pipeline. **Do not merge this branch into
+    `main`.** `main` stays on the verified parquet-only store and RF
+    forecast.
 
 ---
 
