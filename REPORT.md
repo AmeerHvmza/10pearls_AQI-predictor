@@ -2,354 +2,314 @@
 
 **City:** Karachi (24.8607, 67.0011)
 **Forecast horizons:** +24h, +48h, +72h
-**Data window:** 16 Aug 2025 – 16 Aug 2026 (8,760 hourly rows, one full year)
+**Feature store (this report):** 8,825 hourly timestamps, **2025-09-03 00:00 → 2026-09-05 16:00 UTC**
+**Measured AQI hours:** 8,705 (no missing hours on the grid; max step = 1h)
 **Target scale:** US EPA AQI, 0–500
+**sklearn:** `1.9.0` (`requirements.txt`)
+**Trained at:** 2026-09-05 16:48–16:54 UTC
+**Deployed model (all horizons):** Random Forest, `beats_baseline=true`
+**Feature store backend:** local parquet (`data/features.parquet`). **Hopsworks and Vertex AI are not live.**
+**Serving:** FastAPI + Streamlit reading that parquet and `models/`. No Flask, no Airflow, no TF Serving.
+
+This report describes **only** the unified store and models that exist in the
+local commit about to be pushed. It does not describe the earlier local-only
+8,761-row RF run or the GitHub-only 2,263-row LSTM run as if they were current.
 
 ---
 
-## 1. Problem framing
+## 1. Problem and methodology
 
-Predict the US EPA Air Quality Index for a city 24, 48 and 72 hours ahead,
-using only data available at prediction time, on a fully serverless stack with
-no always-on infrastructure.
-
-The system is three scheduled jobs and two read-only interfaces:
+Predict Karachi’s US EPA Air Quality Index 24, 48 and 72 hours ahead using
+only data available at forecast time.
 
 ```
-OpenWeather (pollution) ─┐
-                         ├─▶ feature_pipeline.py ──▶ feature store ──▶ train_pipeline.py ──▶ model registry
-Open-Meteo (weather) ────┘        (hourly)           (parquet or          (daily)              (models/)
-                                                      Hopsworks)                                   │
-                                                                                                   ▼
-                                                                              Streamlit dashboard + FastAPI
+OpenWeather (pollution, current + history)
+OpenWeather (current weather)  ─┐
+Open-Meteo (historical weather)─┴─▶ feature_pipeline / backfill
+                                      │
+                                      ▼
+                              data/features.parquet
+                                      │
+                                      ▼
+                              train_pipeline.py ──▶ models/
+                                      │
+                        Streamlit dashboard + FastAPI /forecast
 ```
 
+**Sources.** OpenWeather Air Pollution (hourly concentrations + 1–5 index;
+history on the free tier to ~Nov 2020). Hourly *current* weather is the
+OpenWeather `/weather` endpoint (one key). Historical weather is Open-Meteo’s
+free archive (`archive-api.open-meteo.com`; no key; ~5-day reanalysis lag).
+Hours are UTC and inner-joined. Hours missing either side are dropped, not
+imputed, except gaps of ≤3 hours which `to_hourly_grid` interpolates and flags
+`is_imputed`.
+
+**AQI.** OpenWeather’s 1–5 index is not the 0–500 EPA scale. Conversion uses
+EPA breakpoint tables per pollutant and takes the **max sub-index**. Gases
+are converted µg/m³ → ppb/ppm at 25 °C, 1 atm, then truncated to table
+precision. Instantaneous hourly readings proxy the EPA’s 24h (PM) / 8h
+(O₃, CO) windows — a known upward bias on short spikes.
+
+**Features.** Tabular models get 64 engineered columns: cyclical time, AQI
+lags (1–48h), rolling stats, rates of change, PM2.5 and weather lags,
+wind×PM2.5 / temp×humidity / pressure-change interactions, AQI capped at the
+99th percentile. The LSTM sees 21 raw series × **12** hours.
+
+**Target.** Models predict the delta `aqi[t+h] − aqi[t]`. Serving adds that
+delta back onto the latest measured AQI. Persistence is “AQI in N hours =
+AQI now,” scored on the same out-of-sample rows.
+
+**Evaluation.** `TimeSeriesSplit` (5 expanding folds), `gap=horizon`,
+`StandardScaler` fit inside each fold on train only. Metrics are **pooled**
+OOS rows. `beats_baseline` is `model_RMSE < persistence_RMSE`. If false, the
+dashboard and API serve persistence. The saved artifact is refit on 100% of
+complete rows; CV estimates generalisation.
+
+**Stack substitutions (brief allows “or”).** The brief lists Flask **or**
+FastAPI, and Airflow **or** GitHub Actions. This project uses **FastAPI**
+(machine API + `/docs`) and **GitHub Actions** (hourly features, daily
+retrain, commit-back). Flask and Airflow are not implemented. Streamlit is
+the human dashboard. Both UIs call `src/predict.py`; there is no second
+model path.
+
+**Managed feature store / model registry — not live.** The brief lists
+Hopsworks or Vertex AI. Neither account is connected. `FEATURE_STORE_BACKEND`
+defaults to `local`. `hopsworks` is commented out in `requirements.txt`.
+Vertex AI does not appear in the repo. `src/verify_hopsworks.py` and the
+README “Swapping in Hopsworks” section are unused optional paths. The
+registry is the committed `models/` directory.
+
 ---
 
-## 2. Data
+## 2. Data-integrity history
 
-### 2.1 Sources
+Two incidents. Both are real; neither is hidden.
 
-| Source | Provides | Notes |
-|---|---|---|
-| OpenWeather Air Pollution | CO, NO, NO₂, O₃, SO₂, PM2.5, PM10, NH₃ | Free tier, history back to ~Nov 2020 |
-| Open-Meteo Archive | temp, humidity, pressure, wind speed/direction, cloud cover | Free, no key, ~5-day reanalysis lag |
+### 2.1 Synthetic year treated as measured history
 
-Both are queried in UTC and joined on the hour. The join is an inner merge on a
-tz-naive UTC `timestamp` column; hours where either side is missing or null are
-dropped rather than imputed.
+The original committed store was **8,760** hourly rows generated by
+`src/synthetic_backfill.py` and never labelled synthetic. Metrics were
+published as if they were OpenWeather history. It was caught because a
+perfect calendar year with no Open-Meteo archive lag is impossible on the
+free archive, and HTTP-audited fetches could not reproduce 8,760 measured
+hours.
 
-### 2.2 Computing the AQI
+The generator was deleted. A 90-day audited backfill produced **2,055** real
+rows (3 Jun 2026 – 27 Aug 2026), sha256
+`1e603a0a7084c1fe3a47b9e66e83515edc41990c114ea7591a11ae2412a44074`, with
+verbatim HTTP 200 URLs in `data/PROVENANCE.md` entry #1. That file was later
+extended by hourly OpenWeather fetches and a 365-day **real** backfill
+(entry #3): 13 pollution GETs + 1 weather GET, all HTTP 200, merged (not
+replaced) into the verified store.
 
-OpenWeather returns raw concentrations plus its own 1–5 index, neither of which
-is the 0–500 EPA scale the project reports against. The conversion applies the
-EPA's piecewise-linear breakpoint tables per pollutant and takes the
-**maximum of the sub-indices**, which is the EPA's definition of the overall AQI.
-Gaseous pollutants are converted from µg/m³ to ppb/ppm at 25 °C and 1 atm.
+### 2.2 Local workspace and GitHub became two projects
 
-Which pollutant sets the AQI, across the full year:
+The year-long store after entry #3 was **not pushed**. GitHub Actions
+continued to append to `origin/main`’s shorter file (the 90-day store plus
+cron). By 2026-09-05:
 
-| Dominant pollutant | Hours | Share |
-|---|---|---|
-| PM2.5 | 6,336 | 74.6% |
-| PM10 | 1,467 | 17.3% |
-| O₃ | 693 | 8.2% |
+| Side | Rows | Range (UTC) | Measured AQI |
+|---|---:|---|---:|
+| Local working tree | 8,797 | 2025-09-03 00:00 → 2026-09-04 12:00 | 8,585 |
+| `origin/main` | 2,263 | 2026-06-03 09:00 → 2026-09-05 15:00 | 2,263 |
 
-A PM2.5-only conversion would therefore understate the AQI for roughly a
-quarter of all hours — which is what an earlier version of this code did.
+Local models were Random Forest; GitHub was serving LSTM and, at +24h and
++72h, **persistence** (`beats_baseline=false`). A local `feature_pipeline`
+run on 2026-09-04 12:00 without the intervening GitHub hours also opened a
+gap that made `predict.py` return an empty frame.
 
-**Known limitation.** The EPA defines these breakpoints against averaging
-windows this data source does not provide (24-hour for particulates, 8-hour for
-O₃ and CO). An instantaneous hourly reading is used as a proxy, which biases the
-computed AQI upward during short spikes. Fixing this properly requires rolling
-the concentrations over their correct windows before the AQI lookup and is the
-most defensible next change to the data layer.
+**Repair (entry #4).** Union by timestamp: local first, origin last, so
+origin fills local NaN placeholders. **0 measured hours lost** from either
+side (6,381 real hours only local + 59 only origin + 2,204 overlap =
+8,644). Grid interpolation flagged 30 short-gap hours `is_imputed`. One
+hourly fetch then wrote **2026-09-05 16:00 UTC**.
 
-### 2.3 Data quality issues found and fixed
+| After repair | |
+|---|---|
+| SHA256 | `a96a44647884bb36c5cba25daa2315d579aa80518ef1f364b930bd4da0602763` |
+| Bytes | 487,052 |
+| Rows | **8,825** |
+| Measured AQI | **8,705** |
+| Range (UTC) | 2025-09-03 00:00 → 2026-09-05 16:00 |
+| Gaps | none (max step 1 hour) |
 
-**Breakpoint gap producing false maximum readings.** The EPA tables jump from
-12.0 to 12.1 µg/m³, 35.4 to 35.5, and so on, because the standard requires the
-concentration to be *truncated* to the table's precision before lookup. Without
-that step, a PM2.5 reading of 12.03 matches no bucket. The original code fell
-through to a hardcoded `return 500.0`, so 32 hours of genuinely clean air were
-recorded as "Hazardous, AQI 500":
+HTTP logs for the historical fetches remain in `data/PROVENANCE.md`. This
+8,825-row file is not the deleted synthetic 8,760-row file.
 
-| Timestamp | PM2.5 (µg/m³) | Recorded AQI | Correct AQI |
+---
+
+## 3. EDA (merged store)
+
+`python notebooks/eda.py` against the 8,825-row file (2026-09-05):
+
+- AQI mean ~88 on measured hours; PM2.5 dominates the EPA max-sub-index
+  (same pattern as the year-long real store: roughly three-quarters of
+  hours).
+- Strong diurnal structure in the hour-of-day boxplot
+  (`data/eda/aqi_by_hour.png`).
+- Correlation heatmap (`data/eda/correlation_heatmap.png`) shows PM2.5 /
+  PM10 tightly coupled with AQI; weather columns weaker but present.
+
+Plots: `data/eda/aqi_timeseries.png`, `aqi_by_hour.png`,
+`correlation_heatmap.png`.
+
+---
+
+## 4. Model comparison (retrain on the unified store)
+
+Pooled OOS RMSE / MAE / R² after `python src/train_pipeline.py` on 8,824
+rows (then one extra hour was fetched; that hour is not in these CV
+numbers). Lower RMSE is better. **Random Forest is best at every horizon
+and beats persistence at all three.**
+
+Ridge **does not beat persistence at any horizon**. That is reported, not
+omitted. LSTM and GBM beat persistence on RMSE everywhere except that
+Ridge loses; LSTM is close to persistence at +24h and worse than RF at
+every horizon.
+
+### +24h (8,176 train rows)
+
+| Model | RMSE | MAE | R² | vs persistence |
+|---|---:|---:|---:|---|
+| **Random Forest** | **27.43** | **17.31** | **0.567** | **beats** |
+| Gradient Boosting | 28.36 | 18.08 | 0.537 | beats |
+| LSTM (12h) | 29.04 | 17.44 | 0.508 | beats |
+| Persistence | 29.51 | 17.46 | 0.499 | — |
+| Ridge | 32.38 | 21.93 | 0.397 | **loses** |
+
+### +48h (8,164 train rows)
+
+| Model | RMSE | MAE | R² | vs persistence |
+|---|---:|---:|---:|---|
+| **Random Forest** | **34.98** | **24.49** | **0.294** | **beats** |
+| Gradient Boosting | 36.34 | 26.06 | 0.237 | beats |
+| LSTM (12h) | 38.36 | 24.87 | 0.145 | beats |
+| Persistence | 39.09 | 25.10 | 0.118 | — |
+| Ridge | 43.23 | 30.96 | −0.079 | **loses** |
+
+### +72h (8,140 train rows)
+
+| Model | RMSE | MAE | R² | vs persistence |
+|---|---:|---:|---:|---|
+| **Random Forest** | **39.14** | **28.24** | **0.102** | **beats** |
+| Gradient Boosting | 41.66 | 30.30 | −0.017 | beats RMSE, **negative R²** |
+| LSTM (12h) | 41.76 | 28.35 | −0.021 | beats RMSE, **negative R²** |
+| Persistence | 42.57 | 28.31 | −0.062 | — |
+| Ridge | 48.28 | 35.58 | −0.366 | **loses** |
+
+### Deployed vs persistence
+
+| Horizon | Deployed | RMSE | Baseline RMSE | RMSE cut | `beats_baseline` | Serving |
+|---|---|---:|---:|---:|---|---|
+| +24h | Random Forest | 27.43 | 29.51 | 7.0% | **true** | `random_forest` |
+| +48h | Random Forest | 34.98 | 39.09 | 10.5% | **true** | `random_forest` |
+| +72h | Random Forest | 39.14 | 42.57 | 8.1% | **true** | `random_forest` |
+
+**Fold caveat.** At +48h and +72h, RF fold R² is mostly negative even
+though pooled R² is positive. Early folds train on late-summer AQI and
+test winter. Selection is by pooled RMSE vs persistence, which RF still
+wins. 24h fold R² stays positive (0.28–0.65).
+
+LSTM `.keras` files are **not** deployed; RF won, so orphans were removed.
+All four candidates were trained and scored (see `all_candidates` in
+`models/metrics_{24,48,72}h.json`).
+
+---
+
+## 5. SHAP (deployed Random Forests)
+
+TreeExplainer on the most recent 100 complete rows of the **refit** model
+(`models/shap_summary_{24,48,72}h.png`, written 2026-09-05 16:48–16:54 UTC,
+same run as the joblibs). In-sample for the served model.
+
+Short-horizon plots are dominated by recent AQI memory (lags and short
+rolling means) plus pressure / gases. Longer horizons lean more on PM10 and
+month encodings, consistent with Karachi’s PM-driven, seasonal AQI.
+
+---
+
+## 6. Automation
+
+| Job | File | Trigger | Action |
 |---|---|---|---|
-| 2025-08-18 08:00 | 12.03 | 500.0 | 50 (Good) |
-| 2025-10-15 14:00 | 35.43 | 500.0 | 100 (Moderate) |
-| 2025-12-15 07:00 | 150.43 | 500.0 | 200 (Unhealthy) |
+| Feature pipeline | `.github/workflows/feature_pipeline.yml` | `0 * * * *` + `workflow_dispatch` | Fetch current pollution + weather, merge parquet, commit `Update features [skip ci]` |
+| Training pipeline | `.github/workflows/training_pipeline.yml` | `0 3 * * *` + `workflow_dispatch` | Retrain all horizons, commit `Retrain models [skip ci]` |
 
-These corrupted both the training targets and the alerting logic.
-`src/repair_feature_store.py` recomputes the AQI column in place from the stored
-concentrations, which were always correct.
-
-**Genuine extreme values.** After the fix, three consecutive hours on 7 June
-2026 still report AQI 500. These are real: PM10 reached 611–647 µg/m³, above the
-top of the EPA table (604), during what the wind and cloud data suggest was a
-dust event. They are correctly capped rather than discarded.
-
-**Temporal gaps.** The store had 11 gaps of 24 hours each (264 missing hours)
-from failed pipeline runs. Because every lag and rolling feature is computed
-with a positional `shift()`, a missing hour silently turns `shift(24)` from
-"24 hours ago" into "24 rows ago". The store is now reindexed onto a continuous
-hourly grid: gaps of up to 3 hours are interpolated and flagged via
-`is_imputed`, longer gaps are held as explicit nulls and dropped at training
-time. This preserves temporal alignment without fabricating a full day of air
-quality data.
+Both use `permissions: contents: write` and concurrency group
+`aqi-repo-commit`. GitHub’s native `schedule` is best-effort and often
+late or skipped; an external `workflow_dispatch` poke covers most hours.
+Schedule **has** fired on its own (API `event=schedule`, including daily
+retrain). After this push, CI will append to the **unified** 8,825-row
+store instead of the old 2,263-row file.
 
 ---
 
-## 3. Features
+## 7. Live verification (2026-09-05, after merge + retrain + hourly fetch)
 
-Two feature sets, because two model families need different things.
-
-**Tabular models (Ridge, Random Forest, Gradient Boosting) — 64 features.**
-History must be flattened into explicit columns:
-
-- Cyclical time encodings (sin/cos for hour, day-of-week, month)
-- AQI lags at 1, 2, 3, 6, 12, 24 and 48 hours
-- Rolling mean / std / min / max over 3, 6, 12 and 24-hour windows
-- Rate-of-change at 1, 3, 6 and 24 hours
-- PM2.5 lags (1, 3, 6, 24h) and weather lags (6, 24h)
-- Interactions: wind × PM2.5 (dispersal), temp × humidity (inversion),
-  6-hour pressure change (fronts)
-- AQI outliers capped at the 99th percentile
-
-**Sequence model (LSTM) — 21 features × 48 timesteps.**
-Raw per-hour signals only: the eight pollutants, six weather variables, and the
-cyclical time encodings. Lag and rolling columns are deliberately excluded
-because the 48-hour sequence already contains that information.
-
-### 3.1 Target formulation
-
-All models predict the **change** in AQI from the current reading, not the
-absolute level:
+`python src/predict.py` (raw):
 
 ```
-target = aqi_capped[t + horizon] - aqi_capped[t]
+{'timestamp': datetime.datetime(2026, 9, 5, 16, 0), 'aqi': 47.1, 'category': 'Good', 'pm2_5': 11.32, 'dominant_pollutant': 'pm2_5', 'age_hours': 0.92, 'is_stale': False}
+   horizon_hours       forecast_time  predicted_aqi  aqi_lower  aqi_upper  category         method     model_used  beats_baseline
+0             24 2026-09-06 16:00:00           47.2       29.7       64.8      Good  random_forest  random_forest            True
+1             48 2026-09-07 16:00:00           47.9       25.6       70.2      Good  random_forest  random_forest            True
+2             72 2026-09-08 16:00:00           51.6       23.4       79.7  Moderate  random_forest  random_forest            True
 ```
 
-This was not the original design, and the reason for the change is the single
-most important modelling finding in this project — see §5.1.
+`GET /health` → `feature_rows: 8825`, `models_available: [24,48,72]`,
+`data_is_stale: false`, `feature_store_backend: local`.
+
+`GET /forecast` → HTTP **200**, same three AQI numbers, `issues: []`.
+
+Streamlit starts (`/_stcore/health` `ok`) and uses the same
+`get_forecast()` / `get_current_aqi()` path.
+
+Alerts fire at AQI ≥ 150 (`config.ALERT_THRESHOLD`). Current and forecast
+values are below that; `/categories/200` returns `alerting: true`.
 
 ---
 
-## 4. Evaluation protocol
+## 8. Limitations
 
-- `TimeSeriesSplit` with 5 expanding-window folds
-- `gap=horizon` between train and test, so no training row's target overlaps
-  the test period
-- `StandardScaler` fitted **inside each fold** on training rows only
-- Metrics pooled across all out-of-sample predictions rather than averaged
-  per fold
-- Every model compared against a **persistence baseline** ("the AQI in N hours
-  will be what it is now") evaluated on identical rows
-
-The deployed artifact is refit on 100% of the data, so reported metrics
-*estimate* its generalisation rather than measure it. This is standard practice
-but worth stating explicitly.
-
----
-
-## 5. Results
-
-### 5.1 Why absolute-level prediction fails
-
-With one year of data starting in August, the first expanding-window fold
-trains on late-summer air and is scored on winter smog:
-
-| Fold | Train target mean | Test target mean | Train max | Test max |
-|---|---|---|---|---|
-| 0 | 43.1 | 128.5 | 85.1 | 201.0 |
-| 1 | 85.1 | 118.5 | 201.0 | 217.6 |
-| 2 | 96.4 | 88.4 | 217.6 | 201.0 |
-
-Tree ensembles cannot predict outside the range of their training targets. A
-Random Forest that has never seen an AQI above 85 physically cannot output 201,
-so fold 0 produces a large negative R² regardless of feature quality, and that
-fold dominates the pooled metric.
-
-Predicting the change instead of the level is roughly stationary across seasons
-and fixes most of this:
-
-| Horizon | Model | R² (absolute) | R² (delta) |
-|---|---|---|---|
-| 24h | Random Forest | −0.346 | **+0.245** |
-| 72h | Random Forest | −0.745 | **+0.074** |
-| 24h | Ridge | −0.941 | −0.949 |
-
-Ridge is unaffected because a linear model extrapolates freely — its problem is
-different, and it remains the worst candidate at every horizon.
-
-### 5.2 Final model comparison
-
-Pooled out-of-sample RMSE / MAE / R² across all five folds. Lower RMSE is better.
-
-**+24h**
-
-| Model | RMSE | MAE | R² |
-|---|---|---|---|
-| **LSTM (TensorFlow)** | **30.29** | **18.50** | **0.514** |
-| Persistence baseline | 30.40 | 18.52 | 0.509 |
-| Random Forest | 37.67 | 26.82 | 0.245 |
-| Gradient Boosting | 42.52 | 30.06 | 0.038 |
-| Ridge | 60.53 | 38.46 | −0.949 |
-
-**+48h**
-
-| Model | RMSE | MAE | R² |
-|---|---|---|---|
-| **LSTM (TensorFlow)** | **38.53** | **25.74** | **0.209** |
-| Persistence baseline | 40.13 | 26.33 | 0.139 |
-| Random Forest | 43.80 | 32.77 | −0.026 |
-| Gradient Boosting | 44.51 | 33.37 | −0.060 |
-| Ridge | 65.66 | 46.47 | −1.306 |
-
-**+72h**
-
-| Model | RMSE | MAE | R² |
-|---|---|---|---|
-| **Random Forest** | **41.30** | **30.09** | **0.074** |
-| Gradient Boosting | 42.98 | 31.53 | −0.002 |
-| LSTM (TensorFlow) | 43.14 | 29.39 | −0.011 |
-| Persistence baseline | 43.97 | 29.88 | −0.049 |
-| Ridge | 64.29 | 46.93 | −1.243 |
-
-**Summary of what is deployed**
-
-| Horizon | Deployed model | RMSE | Baseline RMSE | Improvement |
-|---|---|---|---|---|
-| +24h | LSTM | 30.29 | 30.40 | 0.4% |
-| +48h | LSTM | 38.53 | 40.13 | 4.0% |
-| +72h | Random Forest | 41.30 | 43.97 | 6.1% |
-
-### 5.3 Honest reading of these numbers
-
-**Accuracy degrades with horizon, as expected.** R² falls from 0.51 at 24h to
-0.07 at 72h. Any claim otherwise would be suspicious.
-
-**The +24h margin over persistence is negligible.** 30.29 vs 30.40 RMSE is a
-0.4% improvement and is well within fold-to-fold noise — fold 1 alone ranges
-from R² 0.178 to 0.725. The honest statement is that at 24 hours **this system
-matches persistence, it does not beat it.** Short-horizon AQI is strongly
-autocorrelated, and "tomorrow looks like today" is a genuinely strong baseline
-that published forecasting systems also struggle to beat.
-
-**The margin is real at 48h and 72h.** 4–6% improvements are where the models
-earn their place, which makes sense: persistence degrades quickly as the horizon
-grows, while the models can use weather and seasonal structure.
-
-**Every horizon is verified against the baseline at training time.** If a
-trained model loses, `beats_baseline: false` is recorded in the registry and
-both the dashboard and the API serve the persistence forecast instead, labelled
-as such. Before the delta-target change this was the case at 24h and 48h.
-
-### 5.4 What the models look at
-
-SHAP on the deployed models (GradientExplainer for the LSTMs, TreeExplainer for
-the Random Forest) gives a consistent picture at +24h:
-
-1. `dow_sin` / `is_weekend` — weekly traffic rhythm is the strongest signal
-2. `pm10` — coarse particulates, the second most common AQI driver
-3. `wind_speed` — dispersal
-4. `hour_cos` / `hour_sin` — daily rush-hour cycle
-
-The attribution-by-timestep panel shows the LSTM's attention peaking 5–8 hours
-before prediction time and decaying steadily further back, with the oldest hours
-in the 48-hour window contributing very little. That suggests a shorter window
-would lose almost nothing, and is worth testing.
-
----
-
-## 6. Engineering
-
-### 6.1 Automation
-
-| Workflow | Schedule | Action |
-|---|---|---|
-| `feature_pipeline.yml` | Hourly (`0 * * * *`) | Fetch, compute features, commit the store |
-| `training_pipeline.yml` | Daily (`0 3 * * *`) | Retrain all horizons, commit the registry |
-
-Both declare `permissions: contents: write` (the default `GITHUB_TOKEN` is
-read-only on new repositories) and share a `concurrency` group so the hourly and
-daily jobs cannot collide when they both push at 03:00 UTC. The commit steps
-tolerate a missing `data/` or `models/` directory on first run and retry with a
-rebase if another run pushed first.
-
-### 6.2 Reliability
-
-- API calls retry with exponential backoff, distinguishing rate limits (429)
-  and server errors from an invalid key (401), which fails immediately
-- The feature store is written atomically via a temp file and `os.replace`, so
-  an interrupted run cannot truncate the only copy of the history
-- Feature-store writes merge column-wise, so a partial row cannot null out
-  columns already stored for that hour
-- Timestamps are normalised to tz-naive UTC on every read and write, preventing
-  the tz-aware/naive mix that silently defeats deduplication
-- Missing or null features at prediction time are reported by name rather than
-  raising a NaN error into the dashboard
-
-### 6.3 Uncertainty
-
-Forecasts carry an 80% band. Width is anchored to the model's own out-of-sample
-CV residual spread — which captures total error, not just model variance — and
-for the Random Forest is modulated per prediction by how much the individual
-trees disagree about that input, clamped to 0.5–2× the base width.
-
-This is a heuristic, not a calibrated prediction interval, and is labelled as
-such in the UI. Proper calibration would use conformal prediction or quantile
-regression.
-
----
-
-## 7. Limitations
-
-1. **One year of data.** Not enough to distinguish seasonal patterns from
-   year-specific weather. This is the binding constraint on everything else.
-2. **No forecast weather as input.** The single largest missed opportunity.
-   The models predict 24–72h ahead using only conditions observed *now*. A
-   genuine weather forecast (Open-Meteo's forecast endpoint is free) would give
-   the model the future conditions it is implicitly trying to guess.
-3. **Instantaneous readings used against averaged-window breakpoints** (§2.2).
-4. **Single monitoring point.** OpenWeather interpolates to a lat/lon rather
-   than reporting a ground station; a city the size of Karachi has real spatial
+1. **Hopsworks / Vertex AI are not used.** Local parquet + git is the
+   store and registry. That is a scope cut, not a hidden integration.
+2. **One year of real data.** Enough for RF to beat persistence on RMSE;
+   not enough to treat winter fold scores as settled.
+3. **No forecast weather as input.** Models see conditions *now* only.
+4. **EPA windows vs hourly snapshots** (§1).
+5. **Single lat/lon.** OpenWeather interpolates; Karachi has spatial
    variation this cannot capture.
-5. **No event awareness.** Dust storms, crop burning and industrial incidents
-   drive the largest AQI excursions and are invisible to these features.
-6. **The +24h model only matches persistence** (§5.3).
+6. **No event layer** (dust storms, crop burning).
+7. **Ridge loses to persistence** at every horizon. LSTM/GBM beat
+   persistence on RMSE but are not deployed; at +72h both have negative
+   pooled R².
+8. **Pooled vs fold R²** at 48h/72h: trust RMSE-vs-persistence more than
+   headline R².
+9. **Uncertainty bands** are CV residual spread, not conformal.
+10. **Open-Meteo lag.** The last ~5 days of weather depend on the hourly
+    current-weather fetch.
+11. **Actions cron** still needs the external `workflow_dispatch` poke
+    for reliable hourly coverage.
+12. **Push is a non-fast-forward** against current `origin/main` (this
+    commit sits on the pre-divergence tip plus the unified artifacts).
+    Rebase or merge on push; do not force-push unless you intend to.
 
 ---
 
-## 8. What would most improve accuracy, in priority order
-
-1. **Add forecast weather as an input feature.** Highest leverage by a wide
-   margin, and cheap — the data is free and the pipeline already exists.
-2. **Accumulate 2+ years of history.** Fixes the fold-0 seasonal extrapolation
-   problem at its root and would let the LSTM use a longer window.
-3. **Correct the AQI averaging windows** (24h for PM, 8h for O₃/CO) before the
-   breakpoint lookup.
-4. **Conformal prediction** for calibrated rather than heuristic intervals.
-5. **Hyperparameter search** for the LSTM — the current architecture
-   (64→32 units, 48-hour window) was chosen by reasoning, not tuning, and the
-   attribution decay curve suggests a shorter window may do as well.
-6. **Spatial features** if additional monitoring stations become available.
-
----
-
-## 9. Reproducing these results
+## 9. Reproduce
 
 ```bash
-pip install -r requirements.txt
-export OPENWEATHER_API_KEY=your_key
+pip install -r requirements.txt   # scikit-learn==1.9.0
+# OPENWEATHER_API_KEY in .env (gitignored)
 
-python src/backfill.py --days 90
-python src/train_pipeline.py          # ~17 min on CPU, LSTM dominates the time
+python src/backfill.py --days 365   # only if rebuilding history from APIs
+python src/train_pipeline.py
 python src/predict.py
 
-streamlit run app/streamlit_app.py    # dashboard
-uvicorn api.main:app --port 8000      # REST API
+streamlit run app/streamlit_app.py
+uvicorn api.main:app --host 127.0.0.1 --port 8765
 ```
 
-Metrics for every horizon, including per-fold breakdowns and the baseline
-comparison, are written to `models/metrics_{horizon}h.json`.
+Do **not** recreate history with a synthetic generator. Provenance and
+HTTP logs: `data/PROVENANCE.md`. Per-horizon metrics including folds:
+`models/metrics_{24,48,72}h.json`.
