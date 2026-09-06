@@ -36,12 +36,13 @@ jobs:
           AQI_CITY: ${{ vars.AQI_CITY }}
           AQI_LAT: ${{ vars.AQI_LAT }}
           AQI_LON: ${{ vars.AQI_LON }}
-          # Optional: set the FEATURE_STORE_BACKEND variable to "hopsworks" and
-          # add the secret to write to a managed feature store instead of the
-          # committed parquet file.
-          FEATURE_STORE_BACKEND: ${{ vars.FEATURE_STORE_BACKEND }}
+          # Dual-write: parquet is always the source of truth. Set
+          # HOPSWORKS_ENABLED=true (plus the API key secret) to also
+          # stream-ingest into Hopsworks. Failures are logged and ignored.
           HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
           HOPSWORKS_PROJECT: ${{ vars.HOPSWORKS_PROJECT }}
+          HOPSWORKS_ENABLED: ${{ vars.HOPSWORKS_ENABLED }}
+          HOPSWORKS_FG_VERSION: ${{ vars.HOPSWORKS_FG_VERSION }}
         run: python src/feature_pipeline.py
 
       - name: Commit updated feature store
