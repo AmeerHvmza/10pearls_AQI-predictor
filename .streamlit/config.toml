@@ -1,13 +1,14 @@
 [theme]
-base = "dark"
+base = "light"
 
-# Cool slate-and-cyan palette: the accent is reserved for interactive elements
-# so that the EPA severity colours (green -> maroon) are the only strong hues
-# on the page and stay readable at a glance.
-primaryColor = "#22d3ee"
-backgroundColor = "#0b1120"
-secondaryBackgroundColor = "#131c31"
-textColor = "#e2e8f0"
+# Deep forest green on white: the accent carries all UI chrome (buttons,
+# checkboxes, sliders, links, active states) and the "Good" AQI band, while
+# the remaining EPA severity hues (yellow -> maroon) stay untouched so the
+# scale is still readable. primaryColor is 12.2:1 against the background.
+primaryColor = "#1F3B2C"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F3F6F4"
+textColor = "#212121"
 font = "sans serif"
 
 [server]
@@ -15,3 +16,8 @@ headless = true
 
 [browser]
 gatherUsageStats = false
+
+[client]
+# Hide the built-in Deploy control; we replace it with a Reload action
+# on the forest-green top bar.
+toolbarMode = "viewer"

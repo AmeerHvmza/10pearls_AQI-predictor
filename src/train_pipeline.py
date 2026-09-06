@@ -574,6 +574,39 @@ def _sequence_attributions(result: dict, explain_X, background_X):
     return importance, "Permutation importance"
 
 
+def _result_model_name(result: dict) -> str:
+    """Training builds `best_model_name`; the registry bundle `explain.py`
+    replays carries `model_name`."""
+    return result.get("model_name") or result.get("best_model_name") or "unknown"
+
+
+def save_shap_importance(horizon: int, feature_cols, mean_abs_values,
+                         model_name: str, method: str, n_samples: int,
+                         top_n: int = 15) -> str:
+    """Write the ranked mean |SHAP value| per feature to the registry.
+
+    The summary PNG is not machine-readable, so the dashboard would otherwise
+    have to recompute SHAP on every page load to rank features. This dumps the
+    numbers the plot is already built from.
+    """
+    ranked = sorted(zip(feature_cols, (float(v) for v in mean_abs_values)),
+                    key=lambda kv: kv[1], reverse=True)[:top_n]
+    payload = {
+        "horizon_hours": horizon,
+        "model_name": model_name,
+        "method": method,
+        "n_samples": int(n_samples),
+        "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "features": [{"feature": name, "mean_abs_shap": value}
+                     for name, value in ranked],
+    }
+    out_path = os.path.join(config.MODELS_DIR, f"shap_importance_{horizon}h.json")
+    with open(out_path, "w") as f:
+        json.dump(payload, f, indent=2)
+    print(f"  SHAP importance saved -> {out_path}", flush=True)
+    return out_path
+
+
 def _explain_sequence_model(result: dict, df: pd.DataFrame, plt):
     """Explainability plot for the LSTM.
 
@@ -625,6 +658,11 @@ def _explain_sequence_model(result: dict, df: pd.DataFrame, plt):
     plt.close(fig)
     print(f"  {method} summary saved -> {out_path}", flush=True)
 
+    save_shap_importance(horizon, feature_cols, per_feature,
+                         model_name=_result_model_name(result),
+                         method=f"{method} mean(|attribution|) over the window",
+                         n_samples=len(explain_X))
+
 
 def run_shap_explanation(result: dict, df: pd.DataFrame):
     """Generates a SHAP summary plot for the best model at each horizon.
@@ -659,9 +697,19 @@ def run_shap_explanation(result: dict, df: pd.DataFrame):
         if hasattr(model, "estimators_"):  # tree ensembles
             explainer = shap.TreeExplainer(model)
             shap_values = explainer.shap_values(X_scaled, check_additivity=False)
+            explainer_name = "TreeExplainer"
         else:
             explainer = shap.LinearExplainer(model, X_scaled)
             shap_values = explainer.shap_values(X_scaled)
+            explainer_name = "LinearExplainer"
+
+        save_shap_importance(
+            result["horizon"], feature_cols,
+            np.abs(np.asarray(shap_values)).mean(axis=0),
+            model_name=_result_model_name(result),
+            method=f"{explainer_name} mean(|SHAP value|)",
+            n_samples=len(X),
+        )
 
         plt.figure(figsize=(12, 8))
         shap.summary_plot(shap_values, X, feature_names=feature_cols, show=False,

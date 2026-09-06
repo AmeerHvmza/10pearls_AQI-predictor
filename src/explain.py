@@ -39,6 +39,7 @@ def run(horizons):
         # adapt the saved bundle to it.
         result = {
             "horizon": horizon,
+            "model_name": bundle.get("model_name"),
             "model": bundle["model"],
             "scaler": bundle["scaler"],
             "feature_cols": bundle["feature_cols"],

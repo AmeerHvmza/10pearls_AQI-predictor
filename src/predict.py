@@ -191,6 +191,29 @@ def get_model_metrics() -> dict:
     return out
 
 
+def get_shap_importance(horizon: int):
+    """Ranked mean |SHAP value| per feature for a horizon, or None.
+
+    Written by `train_pipeline.save_shap_importance` alongside the summary
+    PNG, so the dashboard can rank features without recomputing SHAP.
+    """
+    import json
+    path = os.path.join(config.MODELS_DIR, f"shap_importance_{horizon}h.json")
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path) as f:
+            payload = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not payload.get("features"):
+        return None
+    model_path = os.path.join(config.MODELS_DIR, f"model_{horizon}h.joblib")
+    payload["is_stale"] = (os.path.exists(model_path)
+                           and os.path.getmtime(path) < os.path.getmtime(model_path))
+    return payload
+
+
 def shap_plot_status(horizon: int):
     """Return (path, is_stale) for a horizon's SHAP plot, or None.
 
