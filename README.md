@@ -324,7 +324,6 @@ pipeline already computes) is itself part of a strong submission.
 
 | Artifact | What it is |
 |---|---|
-| `REPORT.md` | Concise technical summary: methodology, metrics, limitations, reproduce steps. |
 | `report/` | Full formal LaTeX write-up (`report/aqi_report.tex` → `report/aqi_report.pdf`) with figures, tables, and dashboard screenshots. |
 
 Compile the formal report with:
@@ -342,4 +341,4 @@ baseline (RMSE, MAE, R²), a committed model registry, GitHub Actions for
 hourly features and daily retraining, a Streamlit dashboard with a
 3-day forecast, uncertainty bands, alerts, and SHAP, plus EDA scripts
 and a FastAPI serving layer over the same parquet store. The write-up
-lives in `REPORT.md` (concise summary) and `report/` (full LaTeX report).
+lives in `report/` (full LaTeX write-up and compiled PDF).
