@@ -21,6 +21,10 @@ matplotlib>=3.8,<4
 seaborn>=0.13,<0.14
 shap>=0.45,<1          # optional at runtime: train_pipeline skips SHAP if absent
 
+# Dual-write from feature_pipeline.py / CI. Streamlit Cloud also installs
+# this file; hopsworks wheels are available on Linux. Native Windows may
+# still need `pip install hopsworks --no-deps` if twofish fails to build.
+hopsworks>=4.0,<5
+
 # Optional extras (uncomment as needed):
-# hopsworks          # only if FEATURE_STORE_BACKEND=hopsworks
 # torch              # alternative deep learning backend
