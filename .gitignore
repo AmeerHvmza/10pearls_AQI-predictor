@@ -15,6 +15,10 @@ env/
 
 .DS_Store
 .ipynb_checkpoints/
+shot_*.png
+startup_*.err
+startup_*.log
+.venv-wsl/
 *.parquet.tmp
 tmp*.parquet
 *.parquet.bak
