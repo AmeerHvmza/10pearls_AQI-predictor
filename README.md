@@ -29,6 +29,17 @@ python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 ```
 
+`requirements.txt` is the serving stack (dashboard, API, feature pipeline,
+sklearn models). Streamlit Cloud reads `runtime.txt` and installs that file
+only — it does **not** need TensorFlow, because the deployed models are
+Random Forest joblibs loaded via `predict.py`.
+
+To train or retrain locally (including the optional Keras LSTM candidate):
+
+```bash
+pip install -r requirements-train.txt
+```
+
 Get a **free** OpenWeather API key: https://openweathermap.org/api
 (Air Pollution API + Current Weather are both free tier.)
 
@@ -80,7 +91,8 @@ smaller, raw feature set — it learns temporal structure from the sequence, so
 feeding it the engineered lag columns as well would be redundant.
 
 If TensorFlow is not installed the LSTM candidate is skipped cleanly and the
-other three still train.
+other three still train. Daily GitHub Actions training installs
+`requirements-train.txt` so the LSTM still competes in CI.
 
 ## 4. Run the dashboard
 

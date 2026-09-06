@@ -1,0 +1,8 @@
+# Optional extras for local / CI training (LSTM candidate).
+# The Streamlit Cloud serving path loads Random Forest joblibs via
+# predict.py and never imports TensorFlow. Install this file only when
+# you want to train or retrain, not to run the dashboard.
+#
+# tensorflow-cpu keeps the CI image small; swap for `tensorflow` if you
+# want GPU support locally.
+tensorflow-cpu>=2.16,<3
