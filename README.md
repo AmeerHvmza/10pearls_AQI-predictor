@@ -29,15 +29,21 @@ python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-`requirements.txt` is the serving stack (dashboard, API, feature pipeline,
-sklearn models). Streamlit Cloud reads `runtime.txt` and installs that file
-only — it does **not** need TensorFlow, because the deployed models are
-Random Forest joblibs loaded via `predict.py`.
+`requirements.txt` is the serving stack (dashboard, API, parquet feature
+store, sklearn models). Streamlit Cloud reads `runtime.txt` and installs
+that file only — it does **not** need TensorFlow or Hopsworks. The
+deployed models are Random Forest joblibs loaded via `predict.py`.
 
 To train or retrain locally (including the optional Keras LSTM candidate):
 
 ```bash
 pip install -r requirements-train.txt
+```
+
+Hourly GitHub Actions dual-write to Hopsworks also needs:
+
+```bash
+pip install -r requirements-ingest.txt
 ```
 
 Get a **free** OpenWeather API key: https://openweathermap.org/api

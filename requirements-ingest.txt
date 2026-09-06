@@ -1,0 +1,8 @@
+# Optional extras for GitHub Actions feature-pipeline dual-write.
+# Streamlit Cloud installs requirements.txt only and never imports
+# hopsworks (dashboard/API read parquet via predict.py).
+#
+# Pin to the connected Hopsworks backend minor (5.0.x). [python] pulls
+# confluent-kafka for stream=True. Install on Ubuntu/Python 3.11 CI;
+# native Windows may still need `--no-deps` if twofish fails to build.
+hopsworks[python]==5.0.*
