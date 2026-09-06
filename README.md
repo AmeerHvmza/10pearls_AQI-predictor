@@ -256,18 +256,12 @@ pipeline already computes) is itself part of a strong submission.
 3. **More monitoring stations / spatial features** if your city has multiple AQI stations.
 4. Hyperparameter tuning and trying LSTM/Temporal Fusion Transformer once you have enough data (dozens of thousands of hourly rows) to justify it — with under a few thousand rows, gradient boosting/random forest will usually beat deep learning.
 
-## Deliverables checklist (maps to your brief)
-- [x] Feature pipeline (`src/feature_pipeline.py`)
-- [x] Backfill script (`src/backfill.py`)
-- [x] Training pipeline with RMSE/MAE/R² (`src/train_pipeline.py`)
-- [x] Model registry (`models/`)
-- [x] CI/CD automation (`.github/workflows/`)
-- [x] Interactive dashboard with forecast + alerts (`app/streamlit_app.py`)
-- [x] SHAP feature importance (generated during training, shown in dashboard)
-- [x] EDA (`notebooks/eda.py`)
-- [x] Persistence baseline comparison per horizon (`models/metrics_*.json`)
-- [x] Uncertainty bands on the forecast (ensemble spread + CV residual spread)
-- [ ] Your write-up: once you've run this for a couple of weeks, write the
-      "detailed report" documenting what you tried, real metrics you got,
-      and what you'd do differently — I can help draft that once you have
-      real numbers to report.
+## What this repo includes
+
+Hourly feature collection and a one-shot backfill, a training pipeline
+that scores Ridge / Random Forest / GBM / LSTM against a persistence
+baseline (RMSE, MAE, R²), a committed model registry, GitHub Actions for
+hourly features and daily retraining, a Streamlit dashboard with a
+3-day forecast, uncertainty bands, alerts, and SHAP, plus EDA scripts
+and a FastAPI serving layer over the same parquet store. The write-up
+lives in `REPORT.md` / `report/`.
