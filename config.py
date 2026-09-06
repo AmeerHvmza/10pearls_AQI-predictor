@@ -99,7 +99,9 @@ HOPSWORKS_ENABLED = _env_bool("HOPSWORKS_ENABLED", False)
 HOPSWORKS_API_KEY = _env_str("HOPSWORKS_API_KEY", "")
 HOPSWORKS_PROJECT = _env_str("HOPSWORKS_PROJECT", "")
 HOPSWORKS_FEATURE_GROUP = _env_str("HOPSWORKS_FEATURE_GROUP", "aqi_features")
-HOPSWORKS_FG_VERSION = int(_env_float("HOPSWORKS_FG_VERSION", 1))
+# v1 was created with the default Delta-RS/HDFS writer, which cannot ingest
+# from native Windows. v2 uses stream=True (Kafka + server materialization).
+HOPSWORKS_FG_VERSION = int(_env_float("HOPSWORKS_FG_VERSION", 2))
 HOPSWORKS_MODEL_REGISTRY = _env_str("HOPSWORKS_MODEL_REGISTRY", "aqi_forecaster")
 
 # ---- Model registry ----------------------------------------------------

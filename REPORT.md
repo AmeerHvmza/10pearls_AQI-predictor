@@ -8,7 +8,10 @@
 **sklearn:** `1.9.0` (`requirements.txt`)
 **Trained at:** 2026-09-05 16:48–16:54 UTC
 **Deployed model (all horizons):** Random Forest, `beats_baseline=true`
-**Feature store backend:** local parquet (`data/features.parquet`). **Hopsworks dual-write is scaffolded on `hopsworks-integration` only; ingest is not live. Vertex AI is not used.** Do not merge that branch into `main`.
+**Feature store backend:** local parquet (`data/features.parquet`). On
+`hopsworks-integration`, Hopsworks dual-write is live via stream ingest
+(`aqi_features` v2, 8,829 rows confirmed by Hopsworks). Vertex AI is not
+used. Do not merge that branch into `main` until you choose to.
 **Serving:** FastAPI + Streamlit reading that parquet and `models/`. No Flask, no Airflow, no TF Serving.
 
 This report describes **only** the unified store and models that exist in the
@@ -73,11 +76,11 @@ the human dashboard. Both UIs call `src/predict.py`; there is no second
 model path.
 
 **Managed feature store / model registry.** The brief lists Hopsworks or
-Vertex AI. Vertex AI is not in the repo. Hopsworks was connected on the
-`hopsworks-integration` branch (login, project, feature group created);
-data ingest failed — see §8.13. Production reads stay on parquet.
-`hopsworks` remains commented out in `requirements.txt`. The registry is
-the committed `models/` directory.
+Vertex AI. Vertex AI is not in the repo. On `hopsworks-integration`,
+Hopsworks login, feature-group creation, and ingest work (see §8.13).
+Training and predict still read parquet only. `hopsworks` remains
+commented out in `requirements.txt`. The registry is the committed
+`models/` directory.
 
 ---
 
@@ -272,8 +275,8 @@ values are below that; `/categories/200` returns `alerting: true`.
 ## 8. Limitations
 
 1. **Vertex AI is not used.** Local parquet + git is the production store
-   and registry. Hopsworks is attempted only on `hopsworks-integration`
-   (see §8.13); it is not a live write path.
+   and registry on `main`. Hopsworks dual-write is on
+   `hopsworks-integration` only (see §8.13).
 2. **One year of real data.** Enough for RF to beat persistence on RMSE;
    not enough to treat winter fold scores as settled.
 3. **No forecast weather as input.** Models see conditions *now* only.
@@ -294,19 +297,17 @@ values are below that; `/categories/200` returns `alerting: true`.
 12. **Push is a non-fast-forward** against current `origin/main` (this
     commit sits on the pre-divergence tip plus the unified artifacts).
     Rebase or merge on push; do not force-push unless you intend to.
-13. **Hopsworks dual-write is incomplete (Windows write path).** On
-    `hopsworks-integration`, login, project connection, and feature-group
-    creation succeeded against `aqi_amproject` / `aqi_features` v1. Data
-    ingestion then failed: the Hopsworks Python SDK’s Delta-RS write path
-    talks to HDFS and needs Kerberos (`libgssapi_krb5`), which this
-    Windows client does not provide. That is a known class of issue when
-    running the Hopsworks write path natively on Windows rather than
-    Linux/WSL — not a credentials or dual-write design bug. Hopsworks
-    itself reported the group empty (`No delta logs found` / 0 rows).
-    Dual-write is fail-soft: Hopsworks errors are logged and do not
-    affect the parquet pipeline. **Do not merge this branch into
-    `main`.** `main` stays on the verified parquet-only store and RF
-    forecast.
+13. **Hopsworks ingest works on Windows only via stream, not Delta-RS.**
+    The default Hopsworks Python writer (Delta-RS → HDFS/Kerberos) still
+    fails on native Windows (`libgssapi_krb5` / RPC abort). `aqi_features`
+    v1 is that empty path. Dual-write now uses `stream=True` on
+    `aqi_features` **v2**: Kafka upload + a server-side materialization
+    job. Hopsworks itself then reported **8,829 rows** (2025-09-03 00:00
+    → 2026-09-05 20:00 UTC), matching the local parquet store. Fail-soft
+    remains: a Hopsworks error is logged and does not fail parquet.
+    Training and `predict.py` still read parquet only. **Do not merge
+    this branch into `main` unless you intend to.** `main` stays on the
+    verified parquet-only RF forecast.
 
 ---
 

@@ -193,6 +193,14 @@ def hopsworks_login():
         tempfile.gettempdir(), "hopsworks-certs"
     )
     os.makedirs(cert_folder, exist_ok=True)
+    # Stream/Kafka PEM dumps use a hard-coded /tmp path. On Windows that is
+    # "<cwd-drive>\\tmp"; create it so the write does not fail mid-insert.
+    if os.name == "nt":
+        for drive in ("C", "D"):
+            try:
+                os.makedirs(f"{drive}:\\tmp", exist_ok=True)
+            except OSError:
+                pass
 
     return hopsworks.login(
         api_key_value=config.HOPSWORKS_API_KEY,
@@ -229,6 +237,10 @@ def _hopsworks_feature_group(create: bool):
         event_time="timestamp",
         description="Hourly AQI + weather features for 3-day AQI forecasting",
         online_enabled=False,
+        # Delta-RS talks to HDFS and needs Kerberos; that path fails on
+        # native Windows. stream=True writes Kafka and lets Hopsworks
+        # materialize offline storage server-side.
+        stream=True,
     )
 
 
