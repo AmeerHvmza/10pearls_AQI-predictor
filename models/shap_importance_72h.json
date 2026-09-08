@@ -3,67 +3,67 @@
   "model_name": "random_forest",
   "method": "TreeExplainer mean(|SHAP value|)",
   "n_samples": 100,
-  "generated_at": "2026-09-07T07:51:44.842792+00:00",
+  "generated_at": "2026-09-08T07:44:17.062238+00:00",
   "features": [
     {
       "feature": "pm10",
-      "mean_abs_shap": 9.800130902297143
+      "mean_abs_shap": 9.187398511637054
     },
     {
       "feature": "month_cos",
-      "mean_abs_shap": 6.29249179111878
+      "mean_abs_shap": 6.22417519175863
     },
     {
       "feature": "pressure",
-      "mean_abs_shap": 4.072012597101328
+      "mean_abs_shap": 4.381739424358783
     },
     {
       "feature": "o3",
-      "mean_abs_shap": 2.810674312338035
-    },
-    {
-      "feature": "dow_sin",
-      "mean_abs_shap": 1.8462267830785668
-    },
-    {
-      "feature": "aqi_rmin_3h",
-      "mean_abs_shap": 1.4748662142671396
+      "mean_abs_shap": 3.141458163859746
     },
     {
       "feature": "month_sin",
-      "mean_abs_shap": 1.2966529694537823
-    },
-    {
-      "feature": "aqi_rmax_24h",
-      "mean_abs_shap": 1.294604622344625
-    },
-    {
-      "feature": "pm2_5",
-      "mean_abs_shap": 1.282004086948826
+      "mean_abs_shap": 1.7127695073268547
     },
     {
       "feature": "so2",
-      "mean_abs_shap": 0.9846461910746868
+      "mean_abs_shap": 1.606857477166784
     },
     {
-      "feature": "aqi_rmean_3h",
-      "mean_abs_shap": 0.89328334577838
+      "feature": "aqi_rmin_3h",
+      "mean_abs_shap": 1.5149907116387056
+    },
+    {
+      "feature": "aqi_rmax_24h",
+      "mean_abs_shap": 1.1857862959388183
+    },
+    {
+      "feature": "dow_sin",
+      "mean_abs_shap": 1.158887399531416
     },
     {
       "feature": "aqi_rmax_3h",
-      "mean_abs_shap": 0.8276426181383089
+      "mean_abs_shap": 1.125685763130621
+    },
+    {
+      "feature": "pm2_5",
+      "mean_abs_shap": 0.9115930345039444
+    },
+    {
+      "feature": "aqi_rmean_3h",
+      "mean_abs_shap": 0.8779512061304077
     },
     {
       "feature": "wind_speed",
-      "mean_abs_shap": 0.6261657251274345
+      "mean_abs_shap": 0.8401409223416304
+    },
+    {
+      "feature": "aqi_lag_1h",
+      "mean_abs_shap": 0.5980769834846149
     },
     {
       "feature": "aqi_rmax_6h",
-      "mean_abs_shap": 0.5976458978294444
-    },
-    {
-      "feature": "wind_speed_lag_24h",
-      "mean_abs_shap": 0.558697528048131
+      "mean_abs_shap": 0.5669060751231262
     }
   ]
 }
