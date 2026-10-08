@@ -4,95 +4,95 @@
   "model_family": "scikit-learn",
   "target_mode": "delta (change from current AQI)",
   "selected_metrics": {
-    "rmse": 32.95400867084671,
-    "mae": 23.636350221031897,
-    "r2": 0.36844517060242243
+    "rmse": 32.928212653671174,
+    "mae": 23.680064572547813,
+    "r2": 0.3720974059839798
   },
   "persistence_baseline": {
-    "rmse": 36.84654457623034,
-    "mae": 23.444327538677914,
-    "r2": 0.21043463348475167
+    "rmse": 36.80026611291369,
+    "mae": 23.407562822671153,
+    "r2": 0.21574394579458012
   },
   "beats_baseline": true,
   "serving": "random_forest",
   "all_candidates": {
     "ridge": {
-      "rmse": 52.15926414927165,
-      "mae": 35.80277288655511,
-      "r2": -0.5821857506012926
+      "rmse": 52.42628978240433,
+      "mae": 36.1384091559732,
+      "r2": -0.591674318477267
     },
     "random_forest": {
-      "rmse": 32.95400867084671,
-      "mae": 23.636350221031897,
-      "r2": 0.36844517060242243
+      "rmse": 32.928212653671174,
+      "mae": 23.680064572547813,
+      "r2": 0.3720974059839798
     },
     "gradient_boosting": {
-      "rmse": 33.73950243615915,
-      "mae": 24.659307287687007,
-      "r2": 0.33797878874649456
+      "rmse": 33.68954008238776,
+      "mae": 24.593434308658214,
+      "r2": 0.3427264950385148
     },
     "lstm": {
-      "rmse": 36.126620246428914,
-      "mae": 23.12267303466797,
-      "r2": 0.23885506391525269
+      "rmse": 35.84093684470664,
+      "mae": 22.97498893737793,
+      "r2": 0.2540261149406433
     }
   },
   "fold_metrics": [
     {
       "fold": 0,
-      "n_train": 1535,
-      "n_test": 1580,
-      "train_target_mean": 75.45908794788274,
-      "test_target_mean": 131.3061898734177,
-      "rmse": 50.6833990059584,
-      "mae": 40.06945042899157,
-      "r2": -0.20867181894234
+      "n_train": 1539,
+      "n_test": 1584,
+      "train_target_mean": 75.46465237166991,
+      "test_target_mean": 131.26689898989898,
+      "rmse": 50.999197264235264,
+      "mae": 40.73561935006682,
+      "r2": -0.22928810155721102
     },
     {
       "fold": 1,
-      "n_train": 3115,
-      "n_test": 1580,
-      "train_target_mean": 103.88914285714286,
-      "test_target_mean": 100.01645569620253,
-      "rmse": 38.515508457261745,
-      "mae": 33.231802634798775,
-      "r2": -0.06596210237250166
+      "n_train": 3123,
+      "n_test": 1584,
+      "train_target_mean": 103.75538520653217,
+      "test_target_mean": 99.67209595959596,
+      "rmse": 38.39326282472425,
+      "mae": 33.096784479216694,
+      "r2": -0.046615585969896456
     },
     {
       "fold": 2,
-      "n_train": 4695,
-      "n_test": 1580,
-      "train_target_mean": 102.55792971246007,
-      "test_target_mean": 72.5207594936709,
-      "rmse": 27.25384393377426,
-      "mae": 21.774970334572426,
-      "r2": -0.18758299225690767
+      "n_train": 4707,
+      "n_test": 1584,
+      "train_target_mean": 102.49092160611855,
+      "test_target_mean": 72.50006313131314,
+      "rmse": 26.79787063075344,
+      "mae": 21.45294224469893,
+      "r2": -0.1524898844426077
     },
     {
       "fold": 3,
-      "n_train": 6275,
-      "n_test": 1580,
-      "train_target_mean": 95.10050677290837,
-      "test_target_mean": 70.32827088607596,
-      "rmse": 22.472740338931132,
-      "mae": 14.632877963647166,
-      "r2": -0.06995043948382196
+      "n_train": 6291,
+      "n_test": 1584,
+      "train_target_mean": 94.9900600858369,
+      "test_target_mean": 70.62422222222222,
+      "rmse": 22.237722919454527,
+      "mae": 14.516686226265461,
+      "r2": -0.05627079673395352
     },
     {
       "fold": 4,
-      "n_train": 7855,
-      "n_test": 1580,
-      "train_target_mean": 89.90382533418205,
-      "test_target_mean": 52.73351265822785,
-      "rmse": 11.392367768162512,
-      "mae": 8.472649743149544,
-      "r2": 0.35748989796061326
+      "n_train": 7875,
+      "n_test": 1584,
+      "train_target_mean": 89.90004266666665,
+      "test_target_mean": 51.930997474747485,
+      "rmse": 11.564298505192069,
+      "mae": 8.598290562491169,
+      "r2": 0.35209643680535296
     }
   ],
-  "residual_std": 32.95068563091339,
-  "n_train_rows": 9483,
+  "residual_std": 32.92793775583284,
+  "n_train_rows": 9507,
   "n_cv_splits": 5,
   "n_features": 64,
-  "trained_at": "2026-10-07T09:39:58.647123+00:00",
+  "trained_at": "2026-10-08T09:48:49.549393+00:00",
   "note": "Metrics are out-of-sample from TimeSeriesSplit cross-validation. The deployed artifact is refit on 100% of the data, so these figures estimate its generalisation rather than measure it. Per-fold metrics are included because the earliest expanding-window fold trains on a single season and is scored on another, which dominates the pooled figures. The LSTM candidate is scored on 12-hour sequence windows, a near-identical but not byte-identical subset of the rows the scikit-learn candidates use."
 }
