@@ -3,67 +3,67 @@
   "model_name": "random_forest",
   "method": "TreeExplainer mean(|SHAP value|)",
   "n_samples": 100,
-  "generated_at": "2026-10-27T08:39:05.975091+00:00",
+  "generated_at": "2026-10-28T09:16:56.516857+00:00",
   "features": [
     {
       "feature": "pm10",
-      "mean_abs_shap": 8.181175095576686
-    },
-    {
-      "feature": "o3",
-      "mean_abs_shap": 5.219413111799184
+      "mean_abs_shap": 9.830966122052835
     },
     {
       "feature": "month_sin",
-      "mean_abs_shap": 4.634910761718299
+      "mean_abs_shap": 5.904941130939558
+    },
+    {
+      "feature": "o3",
+      "mean_abs_shap": 4.924226507036247
     },
     {
       "feature": "month_cos",
-      "mean_abs_shap": 3.3423042632015125
+      "mean_abs_shap": 3.9360938447433176
     },
     {
       "feature": "pm2_5",
-      "mean_abs_shap": 2.3180979074724175
+      "mean_abs_shap": 2.8157977864691124
     },
     {
       "feature": "aqi_rmin_3h",
-      "mean_abs_shap": 2.1572931325045683
-    },
-    {
-      "feature": "aqi_diff_24h",
-      "mean_abs_shap": 1.6165882705292132
-    },
-    {
-      "feature": "co",
-      "mean_abs_shap": 1.3266083265423165
+      "mean_abs_shap": 2.5124817581259893
     },
     {
       "feature": "pressure",
-      "mean_abs_shap": 1.2962849698580208
+      "mean_abs_shap": 1.695622300160973
+    },
+    {
+      "feature": "co",
+      "mean_abs_shap": 1.4769303122350317
+    },
+    {
+      "feature": "aqi_diff_24h",
+      "mean_abs_shap": 1.352354078549052
     },
     {
       "feature": "aqi_rstd_24h",
-      "mean_abs_shap": 1.2158193289787753
+      "mean_abs_shap": 1.0876935665327934
     },
     {
-      "feature": "aqi_lag_48h",
-      "mean_abs_shap": 0.841492096986269
-    },
-    {
-      "feature": "aqi_rmax_24h",
-      "mean_abs_shap": 0.8213766146055386
-    },
-    {
-      "feature": "aqi_rmin_24h",
-      "mean_abs_shap": 0.7937120371498025
-    },
-    {
-      "feature": "so2",
-      "mean_abs_shap": 0.7742588980134224
+      "feature": "temp_humidity",
+      "mean_abs_shap": 1.043648848907228
     },
     {
       "feature": "aqi_rmean_3h",
-      "mean_abs_shap": 0.7338805530689221
+      "mean_abs_shap": 0.9996299735086535
+    },
+    {
+      "feature": "aqi_rmax_24h",
+      "mean_abs_shap": 0.990192421382313
+    },
+    {
+      "feature": "so2",
+      "mean_abs_shap": 0.9814432892624927
+    },
+    {
+      "feature": "aqi_lag_48h",
+      "mean_abs_shap": 0.8991141533707422
     }
   ]
 }
